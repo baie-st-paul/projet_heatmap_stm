@@ -1,5 +1,5 @@
 import math
-
+from geopy import distance
 
 class Coordinate:
     def __init__(self, latitude, longitude, intensity_factor):
@@ -8,5 +8,7 @@ class Coordinate:
         self.intensity_factor = intensity_factor
 
     def distance(self, other):
-        return math.sqrt((self.latitude - other.latitude) ** 2 + (self.longitude - other.longitude) ** 2)
+        return distance.distance((self.latitude, self.longitude), (other.latitude, other.longitude)).m
 
+    def __str__(self):
+        return "Latitude: " + str(self.latitude) + ", Longitude: " + str(self.longitude) + ", Intensity Factor: " + str(self.intensity_factor)
