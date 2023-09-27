@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 import main
 app = Flask(__name__)
 
@@ -15,10 +15,10 @@ def hello_world():  # put application's code here
     return 'Hello World!'
 
 
-@app.route("/{hour}")
+@app.route("/time/<hour>")
 def var(hour: str):
-    return main.testtest(hour)
+    return jsonify(main.testtest(hour))
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host="localhost")

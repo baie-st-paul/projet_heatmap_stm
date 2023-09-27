@@ -1,14 +1,26 @@
 import datetime
 import gtfs_kit as gk
 import gtfs_kit.stop_times
+import pandas
+
 from models import coordinate
-from flask import Flask, request, jsonify
 
 feed = gk.read_feed("DataSource/gtfs_stm.zip", dist_units='km')
 stop_time_dataframe = gtfs_kit.stop_times.get_stop_times(feed)
 stop_dataframe = gtfs_kit.stops.get_stops(feed)
+stop_dataframe["coordinate"] = stop_dataframe.apply(lambda row: coordinate.Coordinate(row[3], row[4], 0), axis=1)
+join_stop = pandas.merge(stop_dataframe, stop_time_dataframe, on="stop_id")
+start_coordinate = coordinate.Coordinate(45.450900, -73.621198, 0)
+end_coordinate = coordinate.Coordinate(45.422088, -73.578597, 0)
+print("shaving stop map...")
+join_stop = join_stop[
+    (join_stop["stop_lat"] < start_coordinate.latitude) &
+    (join_stop["stop_lat"] > end_coordinate.latitude) &
+    (join_stop["stop_lon"] > start_coordinate.longitude) &
+    (join_stop["stop_lon"] < end_coordinate.longitude)
+]
 
-
+print("map is shaved well...")
 def get_timedata_array():
     donnees_Temps = [datetime.time(0, 0, 0)]
     for i in range((24 * 4) - 1):
@@ -39,52 +51,68 @@ def get_coordinates_table(coordinate_start, coordinate_end):
     return area_table
 
 
-def get_area_table_at_time(area_table, start_time):
+def get_area_table_at_time(area_table, start_time, join_stop):
+    print()
+
     end_time = (datetime.datetime.combine(datetime.datetime.now(), start_time) + datetime.timedelta(minutes=15)).time()
 
-    stop_times_between = []
-    for stop_time in stop_time_dataframe.values:
-        if datetime.datetime.strptime(stop_time[1], "%H:%M:%S").time() >= end_time:
-            break
-        if datetime.datetime.strptime(stop_time[1], "%H:%M:%S").time() >= start_time:
-            stop_times_between.append(stop_time)
+    def convert_to_datetime(str):
+        try:
+            return bool(start_time <= datetime.datetime.strptime(str, "%H:%M:%S").time() < end_time)
+        except (ValueError):
+            return False
 
-    stops = []
-    for time in stop_times_between:
-        stops.append(stop_dataframe.loc[stop_dataframe["stop_id"] == time[3]].values[0])
 
-    index = 0
+    join_stop["arrival_time"] = join_stop.apply(lambda row: convert_to_datetime(row["arrival_time"]), axis=1)
+
+    join_stop = join_stop[join_stop["arrival_time"] == True]
     for area in area_table:
-        for stop in stops:
-            if area.distance(coordinate.Coordinate(stop[3], stop[4], 0)) < 51:
-                area_table[index].intensity_factor = area_table[index].intensity_factor + 1
-        index += 1
+        print(area)
+        join_stop["is_in_distance"] = join_stop.apply(lambda row: 1 if area.is_instde(row["coordinate"]) else 0, axis=1)
+        area.intensity_factor = join_stop["is_in_distance"].sum()
 
-    return area_table
+
+    appended_area_table = []
+    for area in area_table:
+        if area.intensity_factor > 0:
+            print(area)
+            area.latitude = float(area.latitude)
+            area.longitude = float(area.longitude)
+            area.intensity_factor = int(area.intensity_factor)
+            appended_area_table.append(area)
+
+    return appended_area_table
 
 
 print("Starting Process")
 
+
+
+
 area_table = get_coordinates_table(
-    coordinate.Coordinate(45.450900, -73.621198, 0),
-    coordinate.Coordinate(45.422088, -73.578597, 0)
+    start_coordinate,
+    end_coordinate
 )
 timedata_array = get_timedata_array()
 
-print(timedata_array)
-
-area_table_per_time = [[]]
+# serais fun d'etre un tableau pandas
+area_table_per_time = []
 
 index = 0
+
+
 for time in timedata_array:
-    print("process for :", time.__str__())
-    area_table_per_time[index].append(get_area_table_at_time(area_table, time))
+    print("process for :", time, "| index = ", index)
+    area_table_per_time.append(get_area_table_at_time(area_table, time, join_stop))
     index += 1
 
+#area_table_per_time.append(get_area_table_at_time(area_table, timedata_array[32], join_stop))
 print("Process Finished")
 
 
 def testtest(time_string):
     time = datetime.datetime.strptime(time_string, "%H:%M:%S").time()
     index = timedata_array.index(time)
+    print("time at " ,timedata_array[index])
+
     return area_table_per_time[index]
